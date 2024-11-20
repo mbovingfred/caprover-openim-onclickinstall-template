@@ -1,158 +1,201 @@
 captainVersion: 4
 
 services:
-  $$cap_appname-mongo:
-    image: $$cap_mongo_image
-    volumes:
-      - $$cap_appname-mongo-data:/data/db
-      - $$cap_appname-mongo-logs:/data/logs
-      - $$cap_appname-mongo-conf:/etc/mongo
-    command: ["/bin/bash", "-c", "/docker-entrypoint-initdb.d/mongo-init.sh; docker-entrypoint.sh mongod --wiredTigerCacheSizeGB 1 --auth"]
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: $$cap_mongo_root_user
-      MONGO_INITDB_ROOT_PASSWORD: $$cap_mongo_root_password
-      MONGO_INITDB_DATABASE: openim_v3
-      TZ: Europe/Paris
-    caproverExtra:
-      notExposeAsWebApp: true
+    $$cap_appname:
+        image: openim/openim-server:$$cap_app_version
+        depends_on: 
+            - $$cap_appname-mongo
+            - $$cap_appname-redis
+            - $$cap_appname-kafka
+            - $$cap_appname-minio
+            - $$cap_appname-etcd
+        ports:
+            - "10001:10001"  # MSG Gateway
+            - "10002:10002"  # API
+        environment:
+            IMENV_MONGODB_ADDRESS: srv-captain--$$cap_appname-mongo:27017
+            IMENV_MONGODB_USERNAME: $$cap_mongodb_username
+            IMENV_MONGODB_PASSWORD: $$cap_mongodb_password
+            IMENV_KAFKA_ADDRESS: srv-captain--$$cap_appname-kafka:9092
+            IMENV_REDIS_ADDRESS: srv-captain--$$cap_appname-redis:6379
+            IMENV_REDIS_PASSWORD: $$cap_redis_password
+            IMENV_MINIO_INTERNALADDRESS: srv-captain--$$cap_appname-minio:9000
+            IMENV_MINIO_EXTERNALADDRESS: http://$$cap_appname-minio.$$cap_root_domain
+            IMENV_MINIO_ACCESS_KEY: $$cap_minio_access_key
+            IMENV_MINIO_SECRET_KEY: $$cap_minio_secret_key
+            IMENV_DISCOVERY_ETCD_ADDRESS: srv-captain--$$cap_appname-etcd:2379
+        caproverExtra:
+            containerHttpPort: 10002
 
-  $$cap_appname-redis:
-    image: $$cap_redis_image
-    volumes:
-      - $$cap_appname-redis-data:/data
-      - $$cap_appname-redis-config:/usr/local/redis/config
-    command: ["redis-server", "/usr/local/redis/config/redis.conf", "--requirepass", "$$cap_redis_password", "--appendonly", "yes"]
-    environment:
-      TZ: Europe/Paris
-    caproverExtra:
-      notExposeAsWebApp: true
+    $$cap_appname-web:
+        image: openim/openim-web:$$cap_web_version
+        caproverExtra:
+            containerHttpPort: 80
 
-  $$cap_appname-etcd:
-    image: $$cap_etcd_image
-    environment:
-      ETCD_NAME: s1
-      ETCD_DATA_DIR: /etcd-data
-      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_ADVERTISE_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
-      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://0.0.0.0:2380
-      ETCD_INITIAL_CLUSTER: s1=http://0.0.0.0:2380
-      ETCD_INITIAL_CLUSTER_TOKEN: tkn
-      ETCD_INITIAL_CLUSTER_STATE: new
-    ports:
-      - 12379:2379
-      - 12380:2380
-    caproverExtra:
-      notExposeAsWebApp: true
+    $$cap_appname-admin:
+        image: openim/openim-admin:$$cap_admin_version
+        caproverExtra:
+            containerHttpPort: 80
 
-  $$cap_appname-openim-server:
-    image: $$cap_openim_server_image
-    ports:
-      - $$cap_openim_msg_gateway_port:10001
-      - $$cap_openim_api_port:10002
-    environment:
-      IMENV_MONGODB_ADDRESS: $$cap_mongo_address
-      IMENV_MONGODB_USERNAME: $$cap_mongo_root_user
-      IMENV_MONGODB_PASSWORD: $$cap_mongo_root_password
-      IMENV_REDIS_ADDRESS: $$cap_redis_address
-      IMENV_REDIS_PASSWORD: $$cap_redis_password
-      IMENV_ETCD_ADDRESS: $$cap_etcd_address
-      IMENV_LOG_LEVEL: info
-    caproverExtra:
-      containerHttpPort: 10002
+    $$cap_appname-etcd:
+        image: bitnami/etcd:$$cap_etcd_version
+        environment:
+            - ETCD_NAME=s1
+            - ETCD_DATA_DIR=/etcd-data
+            - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+            - ETCD_ADVERTISE_CLIENT_URLS=http://srv-captain--$$cap_appname-etcd:2379
+            - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+            - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://srv-captain--$$cap_appname-etcd:2380
+            - ETCD_INITIAL_CLUSTER=s1=http://srv-captain--$$cap_appname-etcd:2380
+            - ETCD_INITIAL_CLUSTER_TOKEN=tkn
+            - ETCD_INITIAL_CLUSTER_STATE=new
+            - ALLOW_NONE_AUTHENTICATION=yes
+        volumes:
+            - $$cap_appname-etcd-data:/bitnami/etcd
+        caproverExtra:
+            notExposeAsWebApp: true
 
-  $$cap_appname-openim-chat:
-    image: $$cap_openim_chat_image
-    ports:
-      - $$cap_openim_chat_port:10008
-    environment:
-      CHATENV_MONGODB_ADDRESS: $$cap_mongo_address
-      CHATENV_MONGODB_USERNAME: $$cap_mongo_root_user
-      CHATENV_MONGODB_PASSWORD: $$cap_mongo_root_password
-      CHATENV_REDIS_ADDRESS: $$cap_redis_address
-      CHATENV_REDIS_PASSWORD: $$cap_redis_password
-      CHATENV_LOG_LEVEL: info
-    caproverExtra:
-      containerHttpPort: 10008
+    $$cap_appname-mongo:
+        image: mongo:$$cap_mongodb_version
+        volumes:
+            - $$cap_appname-mongo-data:/data/db
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: $$cap_mongodb_username
+            MONGO_INITDB_ROOT_PASSWORD: $$cap_mongodb_password
+            MONGO_INITDB_DATABASE: openim_v3
+        caproverExtra:
+            notExposeAsWebApp: true
+
+    $$cap_appname-redis:
+        image: redis:$$cap_redis_version
+        command: redis-server --requirepass $$cap_redis_password
+        volumes:
+            - $$cap_appname-redis-data:/data
+        caproverExtra:
+            notExposeAsWebApp: true
+
+    $$cap_appname-kafka:
+        image: bitnami/kafka:$$cap_kafka_version
+        environment:
+            KAFKA_CFG_NODE_ID: 0
+            KAFKA_CFG_PROCESS_ROLES: controller,broker
+            KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@srv-captain--$$cap_appname-kafka:9093
+            KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+            KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://srv-captain--$$cap_appname-kafka:9092
+            KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+        volumes:
+            - $$cap_appname-kafka-data:/bitnami/kafka
+        caproverExtra:
+            notExposeAsWebApp: true
+
+    $$cap_appname-minio:
+        image: minio/minio:$$cap_minio_version
+        volumes:
+            - $$cap_appname-minio-data:/data
+        environment:
+            MINIO_ROOT_USER: $$cap_minio_access_key
+            MINIO_ROOT_PASSWORD: $$cap_minio_secret_key
+        command: server /data
+        caproverExtra:
+            containerHttpPort: 9000
 
 caproverOneClickApp:
-  variables:
-    - id: $$cap_mongo_image
-      label: MongoDB Image
-      defaultValue: mongo:5.0
-      validRegex: /.{1,}/
+    variables:
+        - id: $$cap_app_version
+          label: OpenIM Server Version
+          description: Version of OpenIM Server to deploy
+          defaultValue: 'latest'
+          validRegex: /.{1,}/
 
-    - id: $$cap_redis_image
-      label: Redis Image
-      defaultValue: redis:6.2
-      validRegex: /.{1,}/
+        - id: $$cap_mongodb_version
+          label: MongoDB Version
+          defaultValue: '6.0'
+          validRegex: /.{1,}/
 
-    - id: $$cap_etcd_image
-      label: Etcd Image
-      defaultValue: bitnami/etcd:3.5
-      validRegex: /.{1,}/
+        - id: $$cap_mongodb_username
+          label: MongoDB Username
+          defaultValue: root
+          validRegex: /^[a-zA-Z0-9]+$/
 
-    - id: $$cap_openim_server_image
-      label: OpenIM Server Image
-      defaultValue: openim/server:latest
-      validRegex: /.{1,}/
+        - id: $$cap_mongodb_password
+          label: MongoDB Password
+          description: Must be at least 8 characters
+          defaultValue: $$cap_gen_random_hex(16)
+          validRegex: /.{8,}/
 
-    - id: $$cap_openim_chat_image
-      label: OpenIM Chat Image
-      defaultValue: openim/chat:latest
-      validRegex: /.{1,}/
+        - id: $$cap_redis_version
+          label: Redis Version
+          defaultValue: '7.0'
+          validRegex: /.{1,}/
 
-    - id: $$cap_mongo_root_user
-      label: MongoDB Root Username
-      defaultValue: root
-      validRegex: /^[a-zA-Z0-9]+$/
+        - id: $$cap_redis_password
+          label: Redis Password
+          description: Must be at least 8 characters
+          defaultValue: $$cap_gen_random_hex(16)
+          validRegex: /.{8,}/
 
-    - id: $$cap_mongo_root_password
-      label: MongoDB Root Password
-      defaultValue: $$cap_gen_random_hex(16)
-      validRegex: /.{8,}/
+        - id: $$cap_kafka_version
+          label: Kafka Version
+          defaultValue: '3.5'
+          validRegex: /.{1,}/
 
-    - id: $$cap_redis_password
-      label: Redis Password
-      defaultValue: $$cap_gen_random_hex(16)
-      validRegex: /.{8,}/
+        - id: $$cap_minio_version
+          label: MinIO Version
+          defaultValue: 'RELEASE.2023-09-30T07-02-29Z'
+          validRegex: /.{1,}/
 
-    - id: $$cap_mongo_address
-      label: MongoDB Address
-      defaultValue: srv-captain--$$cap_appname-mongo:27017
-      validRegex: /.{1,}/
+        - id: $$cap_minio_access_key
+          label: MinIO Access Key
+          defaultValue: $$cap_gen_random_hex(8)
+          validRegex: /.{3,}/
 
-    - id: $$cap_redis_address
-      label: Redis Address
-      defaultValue: srv-captain--$$cap_appname-redis:6379
-      validRegex: /.{1,}/
+        - id: $$cap_minio_secret_key
+          label: MinIO Secret Key
+          description: Must be at least 8 characters
+          defaultValue: $$cap_gen_random_hex(32)
+          validRegex: /.{8,}/
 
-    - id: $$cap_etcd_address
-      label: Etcd Address
-      defaultValue: srv-captain--$$cap_appname-etcd:2379
-      validRegex: /.{1,}/
+        - id: $$cap_web_version
+          label: OpenIM Web Version
+          description: Version of OpenIM Web Frontend
+          defaultValue: 'latest'
+          validRegex: /.{1,}/
 
-    - id: $$cap_openim_msg_gateway_port
-      label: OpenIM Gateway Port
-      defaultValue: 10001
-      validRegex: /^\d+$/
+        - id: $$cap_admin_version
+          label: OpenIM Admin Version
+          description: Version of OpenIM Admin Frontend
+          defaultValue: 'latest'
+          validRegex: /.{1,}/
 
-    - id: $$cap_openim_api_port
-      label: OpenIM API Port
-      defaultValue: 10002
-      validRegex: /^\d+$/
+        - id: $$cap_etcd_version
+          label: etcd Version
+          defaultValue: '3.5'
+          validRegex: /.{1,}/
 
-    - id: $$cap_openim_chat_port
-      label: OpenIM Chat Port
-      defaultValue: 10008
-      validRegex: /^\d+$/
+    instructions:
+        start: |-
+            Deploy your own OpenIM instance with this one click.
+            For more information visit https://github.com/OpenIMSDK/Open-IM-Server
+        end: |-
+            Your OpenIM instance is now deployed!
+            
+            Main Endpoints:
+            - API: http://$$cap_appname.$$cap_root_domain
+            - Message Gateway: ws://$$cap_appname.$$cap_root_domain:10001
+            - Web Client: http://$$cap_appname-web.$$cap_root_domain
+            - Admin Panel: http://$$cap_appname-admin.$$cap_root_domain
+            - MinIO Console: http://$$cap_appname-minio.$$cap_root_domain
+            
+            MinIO Credentials:
+            - Access Key: $$cap_minio_access_key
+            - Secret Key: $$cap_minio_secret_key
+            
+            MongoDB Credentials:
+            - Username: $$cap_mongodb_username
+            - Password: $$cap_mongodb_password
 
-  instructions:
-    start: |-
-      Deploy OpenIM with this one-click app template. Make sure to configure all the variables correctly for your setup.
-    end: |-
-      Your OpenIM services have been successfully deployed! Access the OpenIM server at the configured ports.
-  displayName: OpenIM
-  isOfficial: false
-  description: Deploy OpenIM using CapRover with MongoDB, Redis, and Etcd.
-  documentation: https://open-im.github.io
+    displayName: OpenIM
+    isOfficial: false
+    description: Open source instant messaging server with high performance, light weight, and easy scalability.
+    documentation: https://github.com/OpenIMSDK/Open-IM-Server
